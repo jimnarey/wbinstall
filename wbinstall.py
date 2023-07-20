@@ -9,6 +9,8 @@ from amitools.fs.blkdev.RawBlockDevice import RawBlockDevice
 from amitools.fs.ADFSVolume import ADFSVolume
 from dotenv import load_dotenv
 
+from amitoolhelpers.disk_geometry import AutoDiskGeometry
+
 load_dotenv()
 
 # bdf = BlkDevFactory.BlkDevFactory()
@@ -38,14 +40,36 @@ def open_rdb(path: str, read_only: bool=True) -> Any:
     return rdisk
 
 
+def create_rdisk(path, mbs):
+    if mbs < 16:
+        return
+    geo = AutoDiskGeometry(mbs)
+    blkdev = RawBlockDevice(path, block_bytes=geo.block_bytes)
+    blkdev.create(geo.get_num_blocks())
+    blkdev.geo = geo
+    # return RDisk(blkdev)
+    rdisk = RDisk(blkdev)
+    rdisk.create(geo)
+    return rdisk
+
+def create_partition(rdisk: RDisk):
+    rdisk.add_partition('DH0', rdisk.get_cyl_range())
 
 def open_img(path: str, read_only: bool=True) -> BlockDevice:
     bdf = BlkDevFactory()
     blk = bdf.open(path, read_only=read_only)
     return blk, ADFSVolume(blk)
 
+
+def test_vals(max):
+    for i in range(max):
+        print(i)
+        adg = AutoDiskGeometry(i)
+        print(bool(adg.size))
+        adg.print()
+
 rdb = open_rdb(RDB_IMG_PATH)
 
-# badf, vadf = open_img(os.environ.get('ADF_PATH'))
-# bhdf, vhdf = open_img(os.environ.get('HDF_PATH'))
-# brdb, vrdb = open_img(RDB_IMG_PATH)
+badf, vadf = open_img(os.environ.get('ADF_PATH'))
+bhdf, vhdf = open_img(os.environ.get('HDF_PATH'))
+brdb, vrdb = open_img(RDB_IMG_PATH)
