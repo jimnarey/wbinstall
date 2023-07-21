@@ -1,4 +1,9 @@
 *.pyc
 .env
 .python-version
+*.img
+*.hdf
+*.adf
+.vscode/*
+
 dev.py
