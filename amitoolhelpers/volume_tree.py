@@ -9,6 +9,7 @@ from amitools.fs.ADFSFile import ADFSFile
 from amitools.fs.blkdev.BlockDevice import BlockDevice
 from amitools.fs.ADFSVolume import ADFSVolume
 
+from tools import imgfile
 
 class VolumeTree:
 
@@ -22,10 +23,10 @@ class VolumeTree:
         self.hashes = {}
         self.paths = {}
         self.tree = {'name': self.volume.name.get_unicode(), 'entries': []}        
-        self.create_tree(self.entries, self.tree)
+        self._populate(self.entries, self.tree)
         
 
-    def create_tree(self, root, parent):
+    def _populate(self, root, parent):
         hash = hashlib.sha256()
         for entry in root:
             path = os.path.join(*entry.get_node_path())
@@ -33,7 +34,7 @@ class VolumeTree:
             entry.read()
             if isinstance(entry, ADFSDir):    
                 tree_entry['entries'] = []
-                self.create_tree(entry.entries, tree_entry)
+                self._populate(entry.entries, tree_entry)
             else:
                 hash.update(entry.data)
                 digest = hash.hexdigest()
@@ -48,3 +49,44 @@ class VolumeTree:
     
     def files(self):
         return [item for item in self.flat_entries if isinstance(item, ADFSFile)]
+    
+
+class VolumeSet:
+
+    def __init__(self, *args) -> None:
+        self.trees = []
+        for arg in args:
+            self.add(arg)
+
+    def add(self, blkdev):
+        try:
+            self.trees.append(VolumeTree(blkdev))
+        except Exception as e:
+            print('Error creating volume from {}: {}'.format(blkdev, e))
+    
+    @property
+    def hashes(self):
+        hashes = {}
+        for tree in self.trees:
+            hashes.update(tree.hashes)
+        return hashes
+
+    @property
+    def paths(self):
+        paths = {}
+        for tree in self.trees:
+            paths.update(tree.paths)
+        return paths
+
+
+def open_volumeset(dir_path):
+    blkdevs = []
+    for _, __, files in os.walk(dir_path):
+        for file in files:
+            blkdevs.append(imgfile.open_image_file(file))
+    volume_set = VolumeSet(*blkdevs)
+    return volume_set
+
+def open_volume(img_path):
+    blkdev = imgfile.open_image_file(img_path)
+    return VolumeTree(blkdev)
