@@ -2,6 +2,7 @@
 
 import os
 import hashlib
+from functools import cached_property
 from collections.abc import Iterable
 
 from amitools.fs.ADFSDir import ADFSDir
@@ -11,6 +12,46 @@ from amitools.fs.ADFSVolume import ADFSVolume
 
 from tools import imgfile
 
+
+class TreeNode:
+
+    def __init__(self, adfsobj: ADFSDir | ADFSFile) -> None:
+        self.obj = adfsobj
+        self.sha256 = None
+        if self.is_file():
+            self._hash()
+
+    def _check_open(self):
+        self.obj.read()
+
+    def _hash(self):
+        self._check_open()
+        sha256 = hashlib.sha256()
+        sha256.update(self.obj.data)
+        self.sha256 = sha256.hexdigest()
+    
+    def is_file(self):
+        if isinstance(self.obj, ADFSFile):
+            return True
+        return False
+
+    @cached_property
+    def path(self):
+        self._check_open()
+        return os.path.join(*self.obj.get_node_path())
+    
+    @cached_property
+    def parent_path(self):
+        self._check_open()
+        return self.obj.parent.get_node_path() or '/'
+    
+    @cached_property
+    def child_paths(self):
+        self._check_open()
+        if hasattr(self.obj, 'entries'):
+            return [os.path.join(*child.get_node_path()) for child in self.obj.entries]
+
+
 class VolumeTree:
 
     def __init__(self, blkdev: BlockDevice):
@@ -18,37 +59,26 @@ class VolumeTree:
         self.volume = ADFSVolume(blkdev)
         self.volume.open()
         self.volume.root_dir.read(recursive=True)
-        self.entries = self.volume.root_dir.entries
-        self.flat_entries = []
-        self.hashes = {}
-        self.paths = {}
-        self.tree = {'name': self.volume.name.get_unicode(), 'entries': []}        
-        self._populate(self.entries, self.tree)
-        
+        self.entries = []
+        self._populate(self.volume.root_dir.entries)
 
-    def _populate(self, root, parent):
-        hash = hashlib.sha256()
+    def _populate(self, root):
         for entry in root:
-            path = os.path.join(*entry.get_node_path())
-            tree_entry = {'name': entry.name.get_unicode_name(), 'path': path}
-            entry.read()
-            if isinstance(entry, ADFSDir):    
-                tree_entry['entries'] = []
-                self._populate(entry.entries, tree_entry)
-            else:
-                hash.update(entry.data)
-                digest = hash.hexdigest()
-                tree_entry['sha256'] = digest
-                self.hashes[digest] = entry
-            self.paths[path] = entry
-            self.flat_entries.append(entry)
-            parent['entries'].append(tree_entry)
+            entry.read()    
+            if isinstance(entry, ADFSDir): 
+                self._populate(entry.entries)
+            self.entries.append(TreeNode(entry))
 
+    @cached_property
     def dirs(self):
-        return [item for item in self.flat_entries if isinstance(item, ADFSDir)]
+        return [item for item in self.entries if not item.is_file()]
     
+    @cached_property
     def files(self):
-        return [item for item in self.flat_entries if isinstance(item, ADFSFile)]
+        return [item for item in self.entries if item.is_file()]
+    
+    def get_by_hash(self, sha256):
+        return [d for d in self.flat_tree if d['sha256'] == sha256]
     
 
 class VolumeSet:
@@ -63,27 +93,32 @@ class VolumeSet:
             self.trees.append(VolumeTree(blkdev))
         except Exception as e:
             print('Error creating volume from {}: {}'.format(blkdev, e))
-    
-    @property
-    def hashes(self):
-        hashes = {}
+
+    def _get_all(self, attribute):
+        items = []
         for tree in self.trees:
-            hashes.update(tree.hashes)
-        return hashes
+            items += getattr(tree, attribute)
+        return items
 
     @property
-    def paths(self):
-        paths = {}
-        for tree in self.trees:
-            paths.update(tree.paths)
-        return paths
+    def entries(self):
+        return self._get_all('entries')
+
+    @property
+    def files(self):
+        return self._get_all('files')
+    
+    @property
+    def dirs(self):
+        return self._get_all('dirs')
+
 
 
 def open_volumeset(dir_path):
     blkdevs = []
-    for _, __, files in os.walk(dir_path):
+    for root, _, files in os.walk(dir_path):
         for file in files:
-            blkdevs.append(imgfile.open_image_file(file))
+            blkdevs.append(imgfile.open_image_file(os.path.join(root, file)))
     volume_set = VolumeSet(*blkdevs)
     return volume_set
 
