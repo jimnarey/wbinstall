@@ -2,23 +2,24 @@
 
 import os
 import argparse
+import hashlib
 from dotenv import load_dotenv
 # from tools import imgfile
 from amitoolhelpers import volume_tree
 
+from pprint import pprint as pp
+
 load_dotenv()
 
-# TODO - Move this to imgfile and create something similar for an hdf file
-# (put thigs generating VolumeTrees or VolumeSets in that module)
-
-
-
-
 def compare(args):
-    
     adf_set = volume_tree.open_volumeset(args['adfdir'])
     hdf = volume_tree.open_volume(args['hdfpath'])
-    breakpoint()
+    both, source_only, comparator_only = hdf.compare(adf_set)
+    print('both: ', len(both))
+    print('source only: ', len(source_only))
+    print('comparator_only: ', len(comparator_only))
+    # for e in source_only:
+    #     print(e.path)
 
 
 commands = {
@@ -28,11 +29,6 @@ commands = {
                 }
 }
 
-
-# adfb = imgfile.open_image_file(os.environ.get('ADF_PATH'))
-
-
-# tree = VolumeTree(adfb)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(

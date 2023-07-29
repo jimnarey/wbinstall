@@ -13,6 +13,7 @@ from amitools.fs.ADFSVolume import ADFSVolume
 from tools import imgfile
 
 
+
 class TreeNode:
 
     def __init__(self, adfsobj: ADFSDir | ADFSFile) -> None:
@@ -35,17 +36,21 @@ class TreeNode:
             return True
         return False
 
-    @cached_property
+    @property
+    def name(self):
+        return self.obj.name.get_unicode_name()
+
+    @property
     def path(self):
         self._check_open()
         return os.path.join(*self.obj.get_node_path())
     
-    @cached_property
+    @property
     def parent_path(self):
         self._check_open()
         return self.obj.parent.get_node_path() or '/'
     
-    @cached_property
+    @property
     def child_paths(self):
         self._check_open()
         if hasattr(self.obj, 'entries'):
@@ -77,9 +82,24 @@ class VolumeTree:
     def files(self):
         return [item for item in self.entries if item.is_file()]
     
+    def name(self):
+        return self.volume.name.get_unicode()
+
     def get_by_hash(self, sha256):
-        return [d for d in self.flat_tree if d['sha256'] == sha256]
+        return [entry for entry in self.entries if entry.sha256 == sha256]
     
+    def compare(self, comparator):
+        both = []
+        source_only = []
+        comparator_names = [entry.name for entry in comparator.files]
+        for entry in self.files:
+            if entry.name in comparator_names:
+                both.append(entry)
+            else:
+                print(entry.name)
+                source_only.append(entry)
+        comparator_only = [entry for entry in comparator.entries if entry not in both + source_only]
+        return both, source_only, comparator_only
 
 class VolumeSet:
 
@@ -111,6 +131,9 @@ class VolumeSet:
     @property
     def dirs(self):
         return self._get_all('dirs')
+    
+    def get_by_hash(self, sha256):
+        return [entry for entry in self.entries if entry.sha256 == sha256]
 
 
 
